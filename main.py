@@ -8,6 +8,17 @@ from PyQt6.QtCore import QUrl
 def fix_pix(item):
     item.setTransformationMode(QtCore.Qt.TransformationMode.FastTransformation)
 
+class Bonus(QtWidgets.QGraphicsPixmapItem):
+    def __init__(self, x, y, bonus_type="split"):
+        super().__init__(QtGui.QPixmap("textures/spec1.png")) 
+        self.setPos(x, y)
+        self.bonus_type = bonus_type
+
+        fix_pix(self)
+
+    def move(self):
+        self.moveBy(0, 3)
+
 # экран окончания игры
 class GameOverScreen(QtWidgets.QWidget):
     def __init__(self, parent, final_score):
@@ -118,6 +129,10 @@ class GameScreen(QtWidgets.QWidget):
         self.view.setViewportUpdateMode(QtWidgets.QGraphicsView.ViewportUpdateMode.FullViewportUpdate)
 
         self.ball = QtWidgets.QGraphicsPixmapItem(QtGui.QPixmap("textures/Sharik.png"))
+        self.ball.dx = 4
+        self.ball.dy = -4
+        self.balls = [self.ball]
+
         self.paddle = QtWidgets.QGraphicsPixmapItem(QtGui.QPixmap("textures/Platforma.png"))
         
         fix_pix(self.ball)
@@ -149,6 +164,8 @@ class GameScreen(QtWidgets.QWidget):
         self.timer.timeout.connect(self.game_tick)
         
         self.setup_level()
+
+        self.bonuses = []
 
     def resizeEvent(self, event):
         self.view.setGeometry(0, 0, self.width(), self.height())
@@ -192,9 +209,9 @@ class GameScreen(QtWidgets.QWidget):
                 self.is_ball_launched = True
                 self.hint_text.hide()
         
+        # Движение платформы
         move_left = 30 in self.active_scancodes or QtCore.Qt.Key.Key_Left in self.active_scancodes
         move_right = 32 in self.active_scancodes or QtCore.Qt.Key.Key_Right in self.active_scancodes
-
         if move_left and x > 0: self.paddle.setX(x - step)
         if move_right and x < 600 - self.paddle.pixmap().width(): self.paddle.setX(x + step)
 
@@ -202,47 +219,87 @@ class GameScreen(QtWidgets.QWidget):
             self.ball.setX(self.paddle.x() + self.paddle.pixmap().width()//2 - self.ball.pixmap().width()//2)
             return
 
-        self.ball.setRotation(self.ball.rotation() + 3)
-        self.ball.moveBy(self.dx, self.dy)
-        
-        p = self.ball.scenePos()
-        ball_w = self.ball.pixmap().width()
-
-        # границы
-        if p.x() <= 0:
-            self.dx = abs(self.dx)
-        elif p.x() >= 600 - ball_w:
-            self.dx = -abs(self.dx)
+        # цикл для ВСЕХ мячей
+        for ball in self.balls[:]:
+            ball.setRotation(ball.rotation() + 3)
+            ball.moveBy(ball.dx, ball.dy)
             
-        if p.y() <= 0:
-            self.dy = abs(self.dy)
+            p = ball.scenePos()
+            ball_w = ball.pixmap().width()
 
-        # платформа
-        if self.ball.collidesWithItem(self.paddle) and self.dy > 0:
-            self.dy = -abs(self.dy)
+            # отскоки от стен
+            if p.x() <= 0: ball.dx = abs(ball.dx)
+            elif p.x() >= 600 - ball_w: ball.dx = -abs(ball.dx)
+            if p.y() <= 0: ball.dy = abs(ball.dy)
 
-        # кирпичи
-        for b in self.bricks[:]:
-            if self.ball.collidesWithItem(b):
-                self.dy = -self.dy
-                if b.hp == 2:
-                    b.hp = 1
-                    self.score += 1
-                    b.setPixmap(QtGui.QPixmap(f"textures/Bricks/brick{15 - b.id}.png"))
-                else:
-                    self.score += 3
-                    self.scene.removeItem(b)
-                    self.bricks.remove(b)
-                self.score_text.setPlainText(f"Очки: {self.score}")
-                break
+            # Ооскок от платформы
+            if ball.collidesWithItem(self.paddle) and ball.dy > 0:
+                ball.dy = -abs(ball.dy)
+
+            # кирпичи
+            for b in self.bricks[:]:
+                if ball.collidesWithItem(b):
+                    ball.dy = -ball.dy
+                    if b.hp == 2:
+                        b.hp = 1
+                        self.score += 1
+                        b.setPixmap(QtGui.QPixmap(f"textures/Bricks/brick{15 - b.id}.png"))
+                    else:
+                        self.score += 3
+                        self.scene.removeItem(b)
+                        self.bricks.remove(b)
+                        # шанс на бонус
+                        if random.random() < 0.2:
+                            new_bonus = Bonus(b.x(), b.y())
+                            self.scene.addItem(new_bonus)
+                            self.bonuses.append(new_bonus)
+                    self.score_text.setPlainText(f"Очки: {self.score}")
+                    break
+
+            if p.y() > 400:
+                if ball in self.scene.items():
+                    self.scene.removeItem(ball)
+                if ball in self.balls:
+                    self.balls.remove(ball)
+
+        # проверка, кончились ли всё мячи
+        if not self.balls:
+            self.timer.stop()
+            self.main_window.show_game_over(self.score)
 
         if not self.bricks:
             self.timer.stop()
+
+            for ball in self.balls:
+                if ball in self.scene.items():
+                    self.scene.removeItem(ball)
+            self.balls.clear() 
+
+            self.ball = QtWidgets.QGraphicsPixmapItem(QtGui.QPixmap("textures/Sharik.png"))
+            fix_pix(self.ball)
+
+            rect = self.ball.boundingRect()
+            self.ball.setTransformOriginPoint(rect.width()/2, rect.height()/2)
+            self.ball.dx = 4
+            self.ball.dy = -4
+
+            self.scene.addItem(self.ball)
+            self.balls.append(self.ball)
+
+            self.is_ball_launched = False
+            self.hint_text.show()
+
             QtCore.QTimer.singleShot(500, self.setup_level)
-        
-        if p.y() > 400:
-            self.timer.stop()
-            self.main_window.show_game_over(self.score)
+
+        for bn in self.bonuses[:]:
+            bn.move()
+            if bn.collidesWithItem(self.paddle):
+                self.apply_bonus(bn.bonus_type)
+                self.scene.removeItem(bn)
+                self.bonuses.remove(bn)
+            elif bn.y() > 400:
+                self.scene.removeItem(bn)
+                self.bonuses.remove(bn)
             
     def keyPressEvent(self, event):
         self.active_scancodes.add(event.nativeScanCode())
@@ -252,6 +309,24 @@ class GameScreen(QtWidgets.QWidget):
     def keyReleaseEvent(self, event):
         self.active_scancodes.discard(event.nativeScanCode())
         self.active_scancodes.discard(event.key())
+
+    def apply_bonus(self, type):
+        if type == "split":
+            original = self.balls[0]
+
+            new_ball = QtWidgets.QGraphicsPixmapItem(QtGui.QPixmap("textures/Sharik.png"))
+            fix_pix(new_ball)
+
+            rect = new_ball.boundingRect()
+            new_ball.setTransformOriginPoint(rect.width()/2, rect.height()/2)
+
+            new_ball.setPos(original.pos())
+
+            new_ball.dx = -original.dx 
+            new_ball.dy = original.dy
+
+            self.scene.addItem(new_ball)
+            self.balls.append(new_ball)
 
 # главное меню
 class MainWindow(QtWidgets.QMainWindow):
@@ -296,7 +371,7 @@ class MainWindow(QtWidgets.QMainWindow):
             "Шарик может отскакивать буквально от всего, но, чтобы управлять "
             "направлением его полета, у игрока есть платформа внизу игрового экрана. "
             "Задача игрока: набрать как можно больше очков путем разбивания кирпичиков.\n\n"
-            "Управление: A, D или Стрелки - движение; W - запуск мяча; Esc - выход из Fullscreen."
+            "Управление: A, D или Стрелки - движение; W - запуск мяча."
         )
         content = QtWidgets.QLabel(rules_text)
         content.setWordWrap(True)
