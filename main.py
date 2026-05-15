@@ -9,11 +9,12 @@ def fix_pix(item):
     item.setTransformationMode(QtCore.Qt.TransformationMode.FastTransformation)
 
 class Bonus(QtWidgets.QGraphicsPixmapItem):
-    def __init__(self, x, y, bonus_type="split"):
-        super().__init__(QtGui.QPixmap("textures/spec1.png")) 
+    def __init__(self, x, y, bonus_type):
+        img_path = "textures/spec1.png" if bonus_type == "split" else "textures/spec2.png"
+        super().__init__(QtGui.QPixmap(img_path)) 
+        
         self.setPos(x, y)
         self.bonus_type = bonus_type
-
         fix_pix(self)
 
     def move(self):
@@ -212,8 +213,12 @@ class GameScreen(QtWidgets.QWidget):
         # Движение платформы
         move_left = 30 in self.active_scancodes or QtCore.Qt.Key.Key_Left in self.active_scancodes
         move_right = 32 in self.active_scancodes or QtCore.Qt.Key.Key_Right in self.active_scancodes
-        if move_left and x > 0: self.paddle.setX(x - step)
-        if move_right and x < 600 - self.paddle.pixmap().width(): self.paddle.setX(x + step)
+        current_width = self.paddle.boundingRect().width() * self.paddle.scale()
+
+        if move_left and x > 0: 
+            self.paddle.setX(x - step)
+        if move_right and x < 600 - current_width: 
+            self.paddle.setX(x + step)
 
         if not self.is_ball_launched:
             self.ball.setX(self.paddle.x() + self.paddle.pixmap().width()//2 - self.ball.pixmap().width()//2)
@@ -232,7 +237,7 @@ class GameScreen(QtWidgets.QWidget):
             elif p.x() >= 600 - ball_w: ball.dx = -abs(ball.dx)
             if p.y() <= 0: ball.dy = abs(ball.dy)
 
-            # Ооскок от платформы
+            # Отскок от платформы
             if ball.collidesWithItem(self.paddle) and ball.dy > 0:
                 ball.dy = -abs(ball.dy)
 
@@ -250,7 +255,8 @@ class GameScreen(QtWidgets.QWidget):
                         self.bricks.remove(b)
                         # шанс на бонус
                         if random.random() < 0.2:
-                            new_bonus = Bonus(b.x(), b.y())
+                            b_type = random.choice(["split", "long_paddle"]) 
+                            new_bonus = Bonus(b.x(), b.y(), b_type)
                             self.scene.addItem(new_bonus)
                             self.bonuses.append(new_bonus)
                     self.score_text.setPlainText(f"Очки: {self.score}")
@@ -327,6 +333,13 @@ class GameScreen(QtWidgets.QWidget):
 
             self.scene.addItem(new_ball)
             self.balls.append(new_ball)
+            pass
+        elif type == "long_paddle":
+            self.paddle.setScale(1.5)
+            QtCore.QTimer.singleShot(10000, self.reset_paddle_size)
+
+    def reset_paddle_size(self):
+        self.paddle.setScale(1.0)
 
 # главное меню
 class MainWindow(QtWidgets.QMainWindow):
