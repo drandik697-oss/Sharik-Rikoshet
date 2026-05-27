@@ -1,6 +1,7 @@
 import sys
 import os
 import random
+import math
 from PyQt6 import QtWidgets, QtGui, QtCore
 from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
 from PyQt6.QtCore import QUrl
@@ -10,7 +11,13 @@ def fix_pix(item):
 
 class Bonus(QtWidgets.QGraphicsPixmapItem):
     def __init__(self, x, y, bonus_type):
-        img_path = "textures/spec1.png" if bonus_type == "split" else "textures/spec2.png"
+        if bonus_type == "split":
+            img_path = "textures/spec1.png"
+        elif bonus_type == "long_paddle":
+            img_path = "textures/spec2.png"
+        else:
+            img_path = "textures/spec3.png"
+
         super().__init__(QtGui.QPixmap(img_path)) 
         
         self.setPos(x, y)
@@ -141,7 +148,10 @@ class GameScreen(QtWidgets.QWidget):
   
         b_rect = self.ball.boundingRect()
         self.ball.setTransformOriginPoint(b_rect.width()/2, b_rect.height()/2)
-        
+
+        p_rect = self.paddle.pixmap().rect()
+        self.paddle.setTransformOriginPoint(p_rect.width()/2, p_rect.height()/2)
+
         self.scene.addItem(self.ball)
         self.scene.addItem(self.paddle)
 
@@ -237,7 +247,7 @@ class GameScreen(QtWidgets.QWidget):
             elif p.x() >= 600 - ball_w: ball.dx = -abs(ball.dx)
             if p.y() <= 0: ball.dy = abs(ball.dy)
 
-            # Отскок от платформы
+            # отскок от платформы
             if ball.collidesWithItem(self.paddle) and ball.dy > 0:
                 ball.dy = -abs(ball.dy)
 
@@ -255,7 +265,7 @@ class GameScreen(QtWidgets.QWidget):
                         self.bricks.remove(b)
                         # шанс на бонус
                         if random.random() < 0.2:
-                            b_type = random.choice(["split", "long_paddle"]) 
+                            b_type = random.choice(["split", "long_paddle", "fast_ball"]) 
                             new_bonus = Bonus(b.x(), b.y(), b_type)
                             self.scene.addItem(new_bonus)
                             self.bonuses.append(new_bonus)
@@ -318,25 +328,37 @@ class GameScreen(QtWidgets.QWidget):
 
     def apply_bonus(self, type):
         if type == "split":
-            original = self.balls[0]
+            if self.balls:  # проверяем, есть ли вообще мячи на экране
+                original = self.balls[0]
 
-            new_ball = QtWidgets.QGraphicsPixmapItem(QtGui.QPixmap("textures/Sharik.png"))
-            fix_pix(new_ball)
+                new_ball = QtWidgets.QGraphicsPixmapItem(QtGui.QPixmap("textures/Sharik.png"))
+                fix_pix(new_ball)
 
-            rect = new_ball.boundingRect()
-            new_ball.setTransformOriginPoint(rect.width()/2, rect.height()/2)
+                rect = new_ball.boundingRect()
+                new_ball.setTransformOriginPoint(rect.width()/2, rect.height()/2)
 
-            new_ball.setPos(original.pos())
+                new_ball.setPos(original.pos())
 
-            new_ball.dx = -original.dx 
-            new_ball.dy = original.dy
+                new_ball.dx = -original.dx 
+                new_ball.dy = original.dy
 
-            self.scene.addItem(new_ball)
-            self.balls.append(new_ball)
-            pass
+                self.scene.addItem(new_ball)
+                self.balls.append(new_ball)
+                
         elif type == "long_paddle":
             self.paddle.setScale(1.5)
             QtCore.QTimer.singleShot(10000, self.reset_paddle_size)
+
+        elif type == "fast_ball":
+            for ball in self.balls:
+                ball.dx *= 1.5
+                ball.dy *= 1.5
+            QtCore.QTimer.singleShot(7000, self.reset_ball_speed)
+
+    def reset_ball_speed(self):
+        for ball in self.balls:
+            ball.dx = math.copysign(4, ball.dx)
+            ball.dy = math.copysign(4, ball.dy)
 
     def reset_paddle_size(self):
         self.paddle.setScale(1.0)
